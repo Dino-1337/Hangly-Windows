@@ -848,6 +848,18 @@
                                 Style="{StaticResource CaptionTextBlockStyle}"
                                 Text="Steps out of the way while a film or game is full screen on the display the charm hangs on, and comes back when it stops. Off by default: telling a film from any other full-screen app is a guess, and it is occasionally wrong."
                                 TextWrapping="Wrap" />
+                            <ToggleSwitch
+                                x:Name="StretchyToggle"
+                                AutomationProperties.AutomationId="StretchyToggle"
+                                Header="Stretchy rope"
+                                Toggled="OnStretchyToggled" />
+                            <TextBlock
+                                MaxWidth="560"
+                                HorizontalAlignment="Left"
+                                Opacity="0.7"
+                                Style="{StaticResource CaptionTextBlockStyle}"
+                                Text="Lets the cord stretch when you pull the charm far, and spring back when you let go. Off by default."
+                                TextWrapping="Wrap" />
                         </StackPanel>
 
                         <!-- Sound: the same switch and slider as macOS, the same defaults. -->

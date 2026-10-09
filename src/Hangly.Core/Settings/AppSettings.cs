@@ -120,6 +120,9 @@ public sealed record OverlaySettings
     /// <summary>Appearance → Motion: follow Windows' animation effects, or choose.</summary>
     public MotionPreference Motion { get; init; } = MotionPreference.FollowSystem;
 
+    /// <summary>Behaviour → Stretchy rope. Off by default: the cord holds near-rigid.</summary>
+    public RopeElasticity Elasticity { get; init; } = RopeElasticity.Normal;
+
     /// <summary>Appearance → Glow. Soft is the halo every charm has always had.</summary>
     public GlowLevel Glow { get; init; } = GlowLevel.Soft;
 
@@ -195,6 +198,7 @@ public sealed record OverlaySettings
         && string.Equals(DisplayName, other.DisplayName, StringComparison.Ordinal)
         && Motion == other.Motion
         && Glow == other.Glow
+        && Elasticity == other.Elasticity
         && HidesDuringFullscreenVideo == other.HidesDuringFullscreenVideo
         && CharmCount == other.CharmCount
         && CharmIds.SequenceEqual(other.CharmIds, StringComparer.Ordinal)
@@ -217,6 +221,7 @@ public sealed record OverlaySettings
         hash.Add(DisplayName, StringComparer.Ordinal);
         hash.Add(Motion);
         hash.Add(Glow);
+        hash.Add(Elasticity);
         hash.Add(HidesDuringFullscreenVideo);
         foreach (string id in CharmIds)
         {

@@ -28,24 +28,40 @@ public class EnvelopeTests
     private const double Frame120 = 1.0 / 120.0;
 
     /// <summary>The overlay's canvas, as <c>OverlayMetrics.CanvasSize</c> computes it.</summary>
-    private static Size Canvas(double charmSize, double ropeLength)
+    private static Size Canvas(double charmSize, double ropeLength, RopeElasticity elasticity = RopeElasticity.Normal)
     {
         Size room = RopeConfiguration.Layout.CanvasScale(charmSize, ropeLength);
         double rope = BaseHeight * RopeConfiguration.Layout.LengthFraction * ropeLength;
-        double swing = rope * RopeConfiguration.Default.MaximumReachRatio;
+        double swing = rope * RopeElasticityTable.PhysicsOf(elasticity).MaximumReachRatio;
         double reach = BaseHeight * RopeConfiguration.Layout.TailFraction * charmSize
             / RopeConfiguration.Layout.CharmHaloExtent;
 
-        return new Size(
-            Math.Max(BaseWidth * room.Width, 2 * (swing + reach)),
-            BaseHeight * room.Height);
+        double height = Math.Max(
+            BaseHeight * room.Height,
+            (BaseHeight * RopeConfiguration.Layout.AnchorFraction) + swing + reach);
+
+        return new Size(Math.Max(BaseWidth * room.Width, 2 * (swing + reach)), height);
     }
 
+    /// <summary>
+    /// The height <c>RopeConfiguration.Fitted</c> must be given, as
+    /// <c>OverlayMetrics.ReferenceHeight</c> computes it — restated for the same reason
+    /// <see cref="Canvas"/> is.
+    /// </summary>
+    private static double ReferenceHeight(double charmSize, double ropeLength) =>
+        BaseHeight * RopeConfiguration.Layout.CanvasScale(charmSize, ropeLength).Height;
+
     /// <summary>A rope hung the way the overlay hangs one.</summary>
-    private static RopeSimulation Hang(int charmCount, double charmSize, double ropeLength, RopeStyle style)
+    private static RopeSimulation Hang(
+        int charmCount,
+        double charmSize,
+        double ropeLength,
+        RopeStyle style,
+        RopeElasticity elasticity = RopeElasticity.Normal)
     {
-        Size canvas = Canvas(charmSize, ropeLength);
+        Size canvas = Canvas(charmSize, ropeLength, elasticity);
         var rope = new RopeSimulation(style: style, timeProfile: RopeTimeProfileTable.Baseline);
+        rope.SetElasticity(elasticity);
 
         var metrics = new List<CharmMetrics>();
         var beads = new List<IReadOnlyList<CharmBead>>();
@@ -58,7 +74,10 @@ public class EnvelopeTests
 
         rope.SetCharmStack(metrics);
         rope.SetBeads(beads);
-        rope.Fit(canvas, charmSize, ropeLength);
+
+        // Fitted against the reference height, not the (possibly stretch-widened) canvas
+        // height, exactly as OverlayWindow.Reposition now does — see ReferenceHeight.
+        rope.Fit(new Size(canvas.Width, ReferenceHeight(charmSize, ropeLength)), charmSize, ropeLength);
         rope.Start();
         return rope;
     }
@@ -168,6 +187,91 @@ public class EnvelopeTests
         Assert.True(
             right <= canvas.Width,
             $"dragged {right - canvas.Width:F1}pt off the right of a {canvas.Width:F0}pt canvas");
+    }
+
+    /// <summary>
+    /// The same drag circle as <see cref="DragStaysInsideTheCanvas"/>, for a stretchy
+    /// rope's much larger reach — this is the regression a hard-coded
+    /// <c>RopeConfiguration.Default.MaximumReachRatio</c> in <c>OverlayMetrics.CanvasSize</c>
+    /// would reintroduce, and what was actually seen: the cord tracked a far drag
+    /// correctly, but the charm ran off the bottom of a window still sized for the
+    /// near-rigid rope.
+    /// </summary>
+    /// <remarks>
+    /// The anchor sits a hair below the canvas's own top edge, so — unlike the width,
+    /// which is free either side of it — there is no meaningful "up" budget to test:
+    /// a real cursor cannot reach above the display's own top edge either. Only the
+    /// downward direction is a genuine, reachable regression, so only the bottom is
+    /// asserted here, matching what <see cref="DragStaysInsideTheCanvas"/> already
+    /// chooses to assert (left and right, never top).
+    /// </remarks>
+    /// <summary>
+    /// A small, deliberately non-exhaustive sample of <see cref="Combinations"/> — enough
+    /// to cross every dimension at least once (a light style and a heavy one, one charm
+    /// and a full stack, both slider extremes) without paying for the full 243-case grid
+    /// <see cref="Combinations"/> exists for. The geometry this test is checking does not
+    /// vary per style or charm count, only the fit formula's own inputs (charm size, rope
+    /// length) do, so this is not a coverage compromise the way it would be for the solver
+    /// tests the full grid was written for.
+    /// </summary>
+    public static TheoryData<RopeStyle, int, double, double> StretchySample()
+    {
+        var data = new TheoryData<RopeStyle, int, double, double>
+        {
+            { RopeStyle.Thread, 1, 1.0, 1.0 },
+            { RopeStyle.Thread, 1, 0.5, 0.5 },
+            { RopeStyle.Thread, 1, 2.0, 2.0 },
+            { RopeStyle.Leather, 3, 0.5, 2.0 },
+            { RopeStyle.Leather, 3, 2.0, 0.5 },
+        };
+        return data;
+    }
+
+    [Theory(DisplayName = "A stretchy rope's charm is never dragged below the canvas")]
+    [MemberData(nameof(StretchySample))]
+    public void StretchyDragStaysInsideTheCanvas(RopeStyle style, int charmCount, double charmSize, double ropeLength)
+    {
+        Size canvas = Canvas(charmSize, ropeLength, RopeElasticity.Stretchy);
+        RopeSimulation rope = Hang(charmCount, charmSize, ropeLength, style, RopeElasticity.Stretchy);
+        rope.Step(Frame120);
+
+        CharmPlacement lowest = rope.Snapshot().Charms[^1];
+        Assert.True(rope.BeginDrag(lowest.Center), "the lowest charm could not be grabbed");
+
+        double left = double.MaxValue;
+        double right = double.MinValue;
+        double bottom = double.MinValue;
+
+        for (int degree = 0; degree <= 360; degree += 2)
+        {
+            double radians = degree * Math.PI / 180;
+            var target = new Vec2(
+                rope.Anchor.X + (Math.Cos(radians) * canvas.Width * 2),
+                rope.Anchor.Y + (Math.Sin(radians) * canvas.Width * 2));
+
+            rope.UpdateDrag(target, Vec2.Zero);
+            for (int tick = 0; tick < 4; tick++)
+            {
+                rope.Step(Frame120);
+            }
+
+            foreach (CharmPlacement charm in rope.Snapshot().Charms)
+            {
+                left = Math.Min(left, charm.Center.X - charm.Radius);
+                right = Math.Max(right, charm.Center.X + charm.Radius);
+                bottom = Math.Max(bottom, charm.Center.Y + charm.Radius);
+            }
+        }
+
+        rope.EndDrag();
+
+        Assert.True(left >= 0, $"dragged {-left:F1}pt off the left of a {canvas.Width:F0}pt canvas");
+        Assert.True(
+            right <= canvas.Width,
+            $"dragged {right - canvas.Width:F1}pt off the right of a {canvas.Width:F0}pt canvas");
+        Assert.True(
+            bottom <= canvas.Height,
+            $"dragged {bottom - canvas.Height:F1}pt off the bottom of a {canvas.Height:F0}pt canvas");
     }
 
     [Fact(DisplayName = "Re-fitting a rope to a wider canvas moves it rather than flinging it")]

@@ -35,7 +35,7 @@ public sealed partial class RopeSimulation
         }
 
         Style = newStyle;
-        Configuration = Configuration.Applying(newStyle, TimeProfile, Motion);
+        Configuration = Configuration.Applying(newStyle, TimeProfile, Motion, Elasticity);
         RefreshLayout();
         ApplyMasses();
         Wake();
@@ -93,7 +93,7 @@ public sealed partial class RopeSimulation
         }
 
         TimeProfile = newProfile;
-        Configuration = Configuration.Applying(Style, newProfile, Motion);
+        Configuration = Configuration.Applying(Style, newProfile, Motion, Elasticity);
     }
 
     /// <summary>How much the rope moves: full, or reduced for people who asked for less.</summary>
@@ -113,6 +113,25 @@ public sealed partial class RopeSimulation
         }
 
         Motion = newMotion;
-        Configuration = Configuration.Applying(Style, TimeProfile, newMotion);
+        Configuration = Configuration.Applying(Style, TimeProfile, newMotion, Elasticity);
+    }
+
+    /// <summary>Whether the cord may stretch under a hard pull, or holds near-rigid.</summary>
+    public RopeElasticity Elasticity { get; private set; } = RopeElasticity.Normal;
+
+    /// <summary>Switches stretchiness, live, without disturbing where the rope is.</summary>
+    /// <remarks>
+    /// Applied in place like a style change: the rope keeps its position and its history,
+    /// only the numbers the next step reads are different.
+    /// </remarks>
+    public void SetElasticity(RopeElasticity newElasticity)
+    {
+        if (newElasticity == Elasticity)
+        {
+            return;
+        }
+
+        Elasticity = newElasticity;
+        Configuration = Configuration.Applying(Style, TimeProfile, Motion, newElasticity);
     }
 }

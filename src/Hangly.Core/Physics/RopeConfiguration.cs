@@ -228,7 +228,8 @@ public readonly record struct RopeConfiguration
         RopeTimeProfile profile = RopeTimeProfileTable.Baseline,
         double charmSize = 1,
         double ropeLength = 1,
-        RopeMotion motion = RopeMotion.Full)
+        RopeMotion motion = RopeMotion.Full,
+        RopeElasticity elasticity = RopeElasticity.Normal)
     {
         RopeConfiguration configuration = Default;
         Size room = Layout.CanvasScale(charmSize, ropeLength);
@@ -252,7 +253,7 @@ public readonly record struct RopeConfiguration
             SlackBelow = Math.Max(0, size.Height - configuration.AnchorHeight - configuration.TotalLength),
         };
 
-        return configuration.Applying(style, profile, motion);
+        return configuration.Applying(style, profile, motion, elasticity);
     }
 
     /// <summary>Returns this configuration with a style's solver values applied.</summary>
@@ -266,7 +267,8 @@ public readonly record struct RopeConfiguration
     public RopeConfiguration Applying(
         RopeStyle style,
         RopeTimeProfile profile = RopeTimeProfileTable.Baseline,
-        RopeMotion motion = RopeMotion.Full)
+        RopeMotion motion = RopeMotion.Full,
+        RopeElasticity elasticity = RopeElasticity.Normal)
     {
         RopePhysicsProfile physics = RopeStyleTable.PhysicsOf(style);
         RopeConfiguration defaults = Default;
@@ -297,10 +299,20 @@ public readonly record struct RopeConfiguration
         // reason the time of day scales the style: a reduced leather rope is still the
         // quicker one. Full motion is the identity.
         RopeMotionPhysics reduced = RopeMotionTable.PhysicsOf(motion);
-        return configuration with
+        configuration = configuration with
         {
             Damping = 1 - ((1 - configuration.Damping) * reduced.EnergyLossScale),
             ThrowScale = reduced.ThrowScale,
+        };
+
+        // Elasticity goes on last of all, scaling what the style decided rather than
+        // replacing it, for the same reason motion and time of day do: a stretchy
+        // leather rope is still the stiffer one.
+        RopeElasticityPhysics elastic = RopeElasticityTable.PhysicsOf(elasticity);
+        return configuration with
+        {
+            MaxStretchRatio = configuration.MaxStretchRatio + elastic.MaxStretchRatioBonus,
+            MaximumReachRatio = elastic.MaximumReachRatio,
         };
     }
 

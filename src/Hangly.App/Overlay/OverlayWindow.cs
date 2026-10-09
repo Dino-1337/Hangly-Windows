@@ -476,6 +476,7 @@ public sealed class OverlayWindow : IDisposable
         settings = updated;
         renderer.Glow = updated.Glow;
         rope.SetStyle(updated.RopeStyle);
+        rope.SetElasticity(updated.Elasticity);
         ApplyMotion();
         WatchFullscreen();
 
@@ -525,7 +526,7 @@ public sealed class OverlayWindow : IDisposable
 
         // The canvas is measured in points and the desktop in pixels, so the size the
         // rope is fitted to is scaled up exactly once, here, and never again.
-        Size canvas = OverlayMetrics.CanvasSize(settings.CharmSize, settings.RopeLength);
+        Size canvas = OverlayMetrics.CanvasSize(settings.CharmSize, settings.RopeLength, settings.Elasticity);
         var pixels = new Size(canvas.Width * scale, canvas.Height * scale);
 
         frame = ScreenPlacement.Frame(
@@ -541,7 +542,13 @@ public sealed class OverlayWindow : IDisposable
             (int)Math.Round(frame.Height),
             scale);
 
-        rope.Fit(CanvasSize, settings.CharmSize, settings.RopeLength);
+        // The rope's own scale is fitted to the reference height, not the window's actual
+        // (possibly stretch-widened) one — see OverlayMetrics.ReferenceHeight. The width is
+        // the real, elasticity-aware one: Fitted never reads width for scale, so it carries
+        // no such risk, and is exactly how the ordinary rope's own wider reach has always
+        // worked.
+        Size fitSize = new(CanvasSize.Width, OverlayMetrics.ReferenceHeight(settings.CharmSize, settings.RopeLength));
+        rope.Fit(fitSize, settings.CharmSize, settings.RopeLength);
     }
 
     /// <summary>
@@ -855,17 +862,21 @@ public static class OverlayMetrics
     /// keep in step by hand. The height is untouched: it was already correct, because
     /// <c>TailFraction</c> is exactly the room the lowest charm and its halo hang in.</para>
     /// </remarks>
-    public static Size CanvasSize(double charmSize, double ropeLength)
+    public static Size CanvasSize(double charmSize, double ropeLength, RopeElasticity elasticity = RopeElasticity.Normal)
     {
         Size room = RopeConfiguration.Layout.CanvasScale(charmSize, ropeLength);
-        double height = BaseHeight * room.Height;
 
         // How far the charm's centre can get from the anchor. `unit` in
         // RopeConfiguration.Fitted always works out to BaseHeight, because the canvas is
         // BaseHeight × room.Height and it divides by room.Height — so the rope's length in
         // points is this, with no fitting to do. The drag clamp is what bounds it.
+        //
+        // Read live from the current elasticity rather than RopeConfiguration.Default: a
+        // stretchy rope's drag clamp reaches much further than the near-rigid default, and
+        // the window has to be exactly as large as the drag it is sizing for, the same way
+        // it already is for the ordinary rope's own reach.
         double rope = BaseHeight * RopeConfiguration.Layout.LengthFraction * ropeLength;
-        double swing = rope * RopeConfiguration.Default.MaximumReachRatio;
+        double swing = rope * RopeElasticityTable.PhysicsOf(elasticity).MaximumReachRatio;
 
         // What the lowest charm reaches past its own centre. CharmStackLayout caps its
         // radius at the headroom below the rope divided by the halo extent, and that
@@ -874,6 +885,33 @@ public static class OverlayMetrics
         double reach = BaseHeight * RopeConfiguration.Layout.TailFraction * charmSize
             / RopeConfiguration.Layout.CharmHaloExtent;
 
+        // The anchor sits within a hair of the top edge (AnchorFraction), so only the
+        // downward direction needs extra room for a reach beyond the rope's own length —
+        // unlike the width, which needs it on both sides of the anchor. Left as
+        // BaseHeight × room.Height, same as before, for any reach that fits inside what
+        // the rope's own length already provides — which is every ratio up to the
+        // Normal one, so this changes nothing there.
+        double height = Math.Max(
+            BaseHeight * room.Height,
+            (BaseHeight * RopeConfiguration.Layout.AnchorFraction) + swing + reach);
+
         return new Size(Math.Max(BaseWidth * room.Width, 2 * (swing + reach)), height);
     }
+
+    /// <summary>
+    /// The height <see cref="RopeConfiguration.Fitted"/> must be given, regardless of how
+    /// much taller <see cref="CanvasSize"/> made the window for a stretchy reach.
+    /// </summary>
+    /// <remarks>
+    /// <c>Fitted</c> derives the rope's whole scale — segment length, everything — from
+    /// the canvas height alone, on the assumption that whatever height it is handed is
+    /// exactly this one. Width does not carry this risk: <c>Fitted</c> never reads it, which
+    /// is what already let <c>CanvasSize</c>'s width grow for the ordinary rope's own reach
+    /// without this problem existing before now. Feed it the taller, stretchy height
+    /// instead, and a bigger window reads as a bigger rope rather than as more blank
+    /// margin below one — the whole rope, cord and charm together, grows to match, which
+    /// is not what a wider drag circle asked for.
+    /// </remarks>
+    public static double ReferenceHeight(double charmSize, double ropeLength) =>
+        BaseHeight * RopeConfiguration.Layout.CanvasScale(charmSize, ropeLength).Height;
 }

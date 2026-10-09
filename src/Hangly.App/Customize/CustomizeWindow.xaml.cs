@@ -657,6 +657,7 @@ public sealed partial class CustomizeWindow : Window
             MotionChoice.SelectedIndex = (int)overlay.Motion;
             GlowChoice.SelectedIndex = (int)overlay.Glow;
             FullscreenToggle.IsOn = overlay.HidesDuringFullscreenVideo;
+            StretchyToggle.IsOn = overlay.Elasticity == RopeElasticity.Stretchy;
             SoundToggle.IsOn = store.Settings.SoundEffectsEnabled;
             VolumeSlider.Value = Math.Round(store.Settings.SoundVolume * 100);
             VolumeSlider.IsEnabled = SoundToggle.IsOn;
@@ -1527,6 +1528,17 @@ public sealed partial class CustomizeWindow : Window
         if (!isLoading)
         {
             store.UpdateOverlay(overlay => overlay with { HidesDuringFullscreenVideo = FullscreenToggle.IsOn });
+        }
+    }
+
+    private void OnStretchyToggled(object sender, RoutedEventArgs args)
+    {
+        if (!isLoading)
+        {
+            store.UpdateOverlay(overlay => overlay with
+            {
+                Elasticity = StretchyToggle.IsOn ? RopeElasticity.Stretchy : RopeElasticity.Normal,
+            });
         }
     }
 

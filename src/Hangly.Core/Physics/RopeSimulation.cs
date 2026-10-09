@@ -374,7 +374,8 @@ public sealed partial class RopeSimulation
             TimeProfile,
             CharmSize,
             RopeLength,
-            Motion);
+            Motion,
+            Elasticity);
 
         // A rope that has not started has no motion to preserve, so it is laid out on the
         // new canvas rather than moved onto it. That is the difference between the overlay
